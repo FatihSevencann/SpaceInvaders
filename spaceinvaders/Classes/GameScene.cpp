@@ -9,102 +9,112 @@ Scene* GameScene::createScene()
     scene->getPhysicsWorld()->setGravity(Vec2::ZERO);
     auto layer = GameScene::create();
     layer->SetPhysicsWorld(scene->getPhysicsWorld());
-
     scene->addChild(layer);
-
     return scene;
 }
 
-// Print useful error message instead of segfaulting when files are not there.
-static void problemLoading(const char* filename)
-{
-    printf("Error while loading: %s\n", filename);
-    printf("Depending on how you compiled you might have to add 'Resources/' in front of filenames in GameScene.cpp\n");
-}
-
-// on "init" you need to initialize your instance
 bool GameScene::init()
 {
-    //////////////////////////////
-    // 1. super init first
     if ( !Scene::initWithPhysics() )
     {
         return false;
     }
     this->getPhysicsWorld()->setFixedUpdateRate(1);
+    visibleSize = Director::getInstance()->getVisibleSize();
+    Vec2 origin = Director::getInstance()->getVisibleOrigin();
 
+    this->setContentSize(Size(1280, 720));
 
+    setupPhysics();
+    setupGraphics();
+    setupListeners();
+    setupSchedules();
+    createEnemyShips();
+    createBullets();
+
+    return true;
+
+}
+
+#pragma region Setups
+void GameScene::setupPhysics()
+{
+    auto side = cocos2d::PhysicsBody::createEdgeBox(this->getContentSize());
+    side->setCollisionBitmask(0x000003);
+    side->setContactTestBitmask(true);
+    this->setPhysicsBody(side);
+}
+
+void GameScene::setupGraphics()
+{
     Director::getInstance()->getOpenGLView()->setFrameSize(1280, 720);
     Director::getInstance()->getOpenGLView()->setDesignResolutionSize(1280, 720, ResolutionPolicy::EXACT_FIT);
     visibleSize = Director::getInstance()->getVisibleSize();
     Vec2 origin = Director::getInstance()->getVisibleOrigin();
     this->setContentSize(Size(1280, 720));
 
-
     scoreText = Label::create();
     scoreText->setString("0");
     scoreText->setSystemFontSize(30);
-    scoreText->setPosition(Vec2(visibleSize.width-45, visibleSize.height-30));
-
+    scoreText->setPosition(Vec2(visibleSize.width - 45, visibleSize.height - 30));
     this->addChild(scoreText);
 
     spaceShip = Sprite::create("spaceship.png");
-    spaceShip->setPosition(Vec2(visibleSize.width/2, 0));
+    spaceShip->setPosition(Vec2(visibleSize.width / 2, 0));
     spaceShip->setScale(visibleSize.width / 5000, visibleSize.height / 5000);
-    this->addChild(spaceShip,2);
+    this->addChild(spaceShip, 2);
+}
 
-    auto side = cocos2d::PhysicsBody::createEdgeBox(this->getContentSize());
-    side->setCollisionBitmask(0x000003);
-    side->setContactTestBitmask(true);
-
-    this->setPhysicsBody(side);
-
+void GameScene::setupListeners()
+{
     auto mouseListener = EventListenerMouse::create();
-
     mouseListener->onMouseUp = CC_CALLBACK_1(GameScene::onMouseUp, this);
     mouseListener->onMouseMove = CC_CALLBACK_1(GameScene::onMouseMoved, this);
     mouseListener->onMouseDown = CC_CALLBACK_1(GameScene::onMouseDown, this);
-
     _eventDispatcher->addEventListenerWithSceneGraphPriority(mouseListener, this);
 
+    auto contactListener = EventListenerPhysicsContact::create();
+    contactListener->onContactBegin = CC_CALLBACK_1(GameScene::onContactBegin, this);
+    _eventDispatcher->addEventListenerWithSceneGraphPriority(contactListener, this);
+}
+
+void GameScene::setupSchedules()
+{
     this->scheduleUpdate();
     this->schedule(CC_SCHEDULE_SELECTOR(GameScene::updatePosition), enemyMoveTimeDelta);
     this->schedule(CC_SCHEDULE_SELECTOR(GameScene::fireBullet), bulletFireRate);
+}
 
-    auto contactListener = EventListenerPhysicsContact::create();
-
-    contactListener->onContactBegin = CC_CALLBACK_1(GameScene::onContactBegin, this);
-    _eventDispatcher->addEventListenerWithSceneGraphPriority(contactListener, this);
-
-
+void GameScene::createEnemyShips()
+{
     for (int i = 0; i < 16; i++)
     {
-        auto a = EnemyShip::Create(new EnemyShipA(),this , Vec2(75 + (i) * 60, visibleSize.height - 75));
+        auto a = EnemyShip::Create(new EnemyShipA(), this, Vec2(75 + (i) * 60, visibleSize.height - 75));
         this->addChild(a);
         enemyShips.push_back(a);
     }
 
     for (int i = 0; i < 16; i++)
     {
-        auto a = EnemyShip::Create(new EnemyShipB(), this, Vec2(75 + (i) * 60, visibleSize.height-25));
-
+        auto a = EnemyShip::Create(new EnemyShipB(), this, Vec2(75 + (i) * 60, visibleSize.height - 25));
         this->addChild(a);
         enemyShips.push_back(a);
     }
+}
 
-
+void GameScene::createBullets()
+{
     for (size_t i = 0; i < 2; i++)
     {
         bullets.push_back(Bullet::createBullet(spaceShip->getPosition() + Vec2::ANCHOR_TOP_LEFT * -60, 0.05f, this));
         this->addChild(bullets.back());
-
     }
 
-
     lastBulletIndex = 4;
-
-    return true;
 }
+#pragma endregion
+
+#pragma region Update
 
 void GameScene::update(float delta)
 {
@@ -133,27 +143,30 @@ void GameScene::updatePosition(float delta) {
         var->Update(moveDown ? -Vec2::ANCHOR_TOP_LEFT * 100 : -Vec2::ANCHOR_BOTTOM_RIGHT * 10 * enemyMoveDirection, 15);
     }
     moveDown = false;
-
 }
-void GameScene::fireBullet(float delta) {
 
+#pragma endregion
+void GameScene::fireBullet(float delta)
+{
     if (bullets.empty())
     {
-        bullets.push_back(Bullet::createBullet(spaceShip->getPosition() + Vec2::ANCHOR_TOP_LEFT * -200, 0.05f, this));
-        this->addChild(bullets.back());
+        auto bullet = Bullet::createBullet(spaceShip->getPosition() + Vec2::ANCHOR_TOP_LEFT * -200, 0.05f, this);
+        bullets.push_back(bullet);
+        this->addChild(bullet);
     }
-    if (!bullets.back()->activated&& bullets.back()->getParent()==nullptr) {
-        this->addChild(bullets.back());
+
+    auto lastBullet = bullets.back();
+    if (!lastBullet->activated && lastBullet->getParent() == nullptr) {
+        this->addChild(lastBullet);
     }
 
     if (streak) {
-        bullets.back()->bulletSprite->setColor(Color3B::YELLOW);
-    }
-    else if(bullets.back()->bulletSprite->getColor()!= Color3B::WHITE) {
-        bullets.back()->bulletSprite->setColor(Color3B::WHITE);
+        lastBullet->bulletSprite->setColor(Color3B::YELLOW);
+    } else if (lastBullet->bulletSprite->getColor() != Color3B::WHITE) {
+        lastBullet->bulletSprite->setColor(Color3B::WHITE);
     }
 
-    bullets.back()->Move(spaceShip->getPosition());
+    lastBullet->Move(spaceShip->getPosition());
     bullets.pop_back();
 }
 
@@ -165,6 +178,7 @@ bool GameScene::onContactBegin(cocos2d::PhysicsContact& contact)
     PhysicsBody* bulletBody;
     PhysicsBody* enemyBody;
 
+
     bool bulletCollisionConditionWithEnemy = body1->getCollisionBitmask() == 0x000001 &&
                                              body2->getCollisionBitmask() == 0x000002;
 
@@ -175,7 +189,8 @@ bool GameScene::onContactBegin(cocos2d::PhysicsContact& contact)
 
     if (bulletCollisionConditionWithEnemy || bulletCollisionConditionWithEnemy2)
     {
-        if (bulletCollisionConditionWithEnemy) {
+        if (bulletCollisionConditionWithEnemy)
+        {
             enemyBody = body2;
             bulletBody = body1;
         }
@@ -194,12 +209,14 @@ bool GameScene::onContactBegin(cocos2d::PhysicsContact& contact)
         if(b != nullptr)
             b->TakeDamage(bulletDamage);
 
-        if (b != nullptr && b->health <= 0) {
+        if (b != nullptr && b->health <= 0)
+        {
 
             enemyShips.erase(std::remove(enemyShips.begin(), enemyShips.end(), b));
             this->removeChild(b);
 
-            if (enemyShips.size() == 0) {
+            if (enemyShips.size() == 0)
+            {
                 auto newScene = GameScene::createScene();
                 _director->replaceScene(newScene);
             }
@@ -252,20 +269,22 @@ bool GameScene::onContactBegin(cocos2d::PhysicsContact& contact)
         moveDown = true;
         enemyMoveDirection *= -1;
 
-        if (enemyShips[0]->getPositionY() < 0) {
+        if (enemyShips[0]->getPositionY() < 0)
+        {
             auto newScene = GameOver::createScene();
             _director->replaceScene(newScene);
         }
     }
-
     return true;
 }
 
+#pragma region Mouse Actions
 bool GameScene::onMouseUp(cocos2d::EventMouse* mouse)
 {
     isTouching = false;
     return 1;
 }
+
 void GameScene::onMouseMoved(cocos2d::EventMouse* mouse)
 {
     direction = mouse->getCursorX() > visibleSize.width / 2 ? 1 : -1;
@@ -275,3 +294,4 @@ bool GameScene::onMouseDown(cocos2d::EventMouse* mouse)
     isTouching = true;
     return 1;
 }
+#pragma endregion
